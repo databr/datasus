@@ -3,7 +3,6 @@ package main
 import (
 	"io/ioutil"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -147,23 +146,12 @@ type Response struct {
 
 var (
 	RequestQueue = make(chan NewRequest)
-	timeout      = time.Duration(1 * time.Minute)
 )
 
 func StartRequestService(n int) {
-	transport := http.Transport{
-		Dial: func(network, addr string) (net.Conn, error) {
-			return net.DialTimeout(network, addr, timeout)
-		},
-	}
+	client := http.Client{}
 
-	client := http.Client{
-		Transport: &transport,
-	}
-
-	for i := 0; i < n; i++ {
-		go processRequestQueue(i, &client)
-	}
+	go processRequestQueue(1, &client)
 }
 
 func processRequestQueue(i int, client *http.Client) {
