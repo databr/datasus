@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,14 +33,9 @@ type NewCity struct {
 var StateQueue chan NewState
 var CityQueue chan NewCity
 
-func main() {
-	f, err := os.Create("./profile")
-	if err != nil {
-		log.Fatal(err)
-	}
-	pprof.StartCPUProfile(f)
-	defer pprof.StopCPUProfile()
+var CACHE_FOLDER = os.Getenv("CACHE_FOLDER")
 
+func main() {
 	StateQueue = make(chan NewState)
 	CityQueue = make(chan NewCity)
 
@@ -218,7 +212,7 @@ func makeRequest(url string, client *http.Client) (doc *goquery.Document, err er
 var urlToFileRegex = regexp.MustCompile(`\W`)
 
 func urlToFilename(url string) string {
-	return "./data/" + urlToFileRegex.ReplaceAllString(url, "-")
+	return CACHE_FOLDER + "/" + urlToFileRegex.ReplaceAllString(url, "-")
 }
 
 var Errors = make(map[string]int64, 0)
