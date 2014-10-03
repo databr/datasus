@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -53,8 +54,6 @@ func Collector() {
 		return
 	}
 
-	go getStates(doc)
-
 	var wg sync.WaitGroup
 
 	for i := 0; i < WORKERS; i++ {
@@ -65,12 +64,12 @@ func Collector() {
 		}()
 	}
 
+	getStates(doc)
+
 	wg.Wait()
 }
 
 func Workers() {
-	timeCheck := time.NewTicker(2 * time.Second).C
-
 	for {
 		select {
 		case state := <-StateQueue:
@@ -80,7 +79,7 @@ func Workers() {
 				time.Sleep(5 * time.Second)
 				StateQueue <- state
 			} else {
-				go getCities(doc)
+				getCities(doc)
 				log.Println("TODO:", "Saving state url on DB", state)
 			}
 		case city := <-CityQueue:
@@ -90,10 +89,9 @@ func Workers() {
 				time.Sleep(5 * time.Second)
 				CityQueue <- city
 			} else {
-				go getEntities(doc)
+				getEntities(doc)
 				log.Println("TODO:", "Saving city url on DB", city)
 			}
-		case <-timeCheck:
 		}
 	}
 }
@@ -102,8 +100,8 @@ func getStates(doc *goquery.Document) {
 	doc.Find("div[style = 'width:300; height:209; POSITION: absolute; TOP: 185px; LEFT: 400px; overflow:auto'] table tr").Each(func(_ int, s *goquery.Selection) {
 		data := s.Find("td")
 		name := strings.TrimSpace(data.Eq(0).Text())
-		url, _ := data.Eq(0).Find("a").Attr("href")
-		StateQueue <- NewState{Name: name, Url: CNES_BASE_URL + url}
+		urlState, _ := data.Eq(0).Find("a").Attr("href")
+		StateQueue <- NewState{Name: name, Url: CNES_BASE_URL + urlState}
 	})
 }
 
@@ -113,9 +111,9 @@ func getCities(doc *goquery.Document) {
 		go func(data *goquery.Selection) {
 			ibge := data.Eq(0).Text()
 			name := data.Eq(1).Text()
-			url, _ := data.Eq(1).Find("a").Attr("href")
+			urlCity, _ := data.Eq(1).Find("a").Attr("href")
 
-			CityQueue <- NewCity{Name: strings.TrimSpace(name), Url: CNES_BASE_URL + url, IBGE: ibge}
+			CityQueue <- NewCity{Name: strings.TrimSpace(name), Url: CNES_BASE_URL + urlCity, IBGE: ibge}
 		}(s.Find("td"))
 	})
 }
@@ -145,7 +143,9 @@ var (
 func StartRequestService(n int) {
 	client := http.Client{}
 
-	go processRequestQueue(1, &client)
+	for i := 0; i < WORKERS; i++ {
+		go processRequestQueue(i, &client)
+	}
 }
 
 func processRequestQueue(i int, client *http.Client) {
@@ -183,13 +183,19 @@ func processRequestQueue(i int, client *http.Client) {
 	}
 }
 
-func makeRequest(url string, client *http.Client) (doc *goquery.Document, err error) {
+func makeRequest(urlS string, client *http.Client) (doc *goquery.Document, err error) {
 	var (
 		req *http.Request
 		res *http.Response
 	)
+	urlP, err := url.Parse(urlS)
+	if err != nil {
+		log.Fatal(err)
+	}
+	q := urlP.Query()
+	urlP.RawQuery = q.Encode()
 
-	req, err = http.NewRequest("GET", url, nil)
+	req, err = http.NewRequest("GET", urlP.String(), nil)
 	if err != nil {
 		log.Println("ERROR", err)
 	} else {
@@ -200,7 +206,7 @@ func makeRequest(url string, client *http.Client) (doc *goquery.Document, err er
 			log.Println("ERROR", err)
 		} else {
 			data, _ := ioutil.ReadAll(res.Body)
-			ioutil.WriteFile(urlToFilename(url), data, os.ModePerm)
+			ioutil.WriteFile(urlToFilename(urlS), data, os.ModePerm)
 			doc, err = goquery.NewDocumentFromReader(res.Body)
 			res.Body.Close()
 		}
@@ -211,25 +217,25 @@ func makeRequest(url string, client *http.Client) (doc *goquery.Document, err er
 
 var urlToFileRegex = regexp.MustCompile(`\W`)
 
-func urlToFilename(url string) string {
-	return CACHE_FOLDER + "/" + urlToFileRegex.ReplaceAllString(url, "-")
+func urlToFilename(u string) string {
+	return CACHE_FOLDER + "/" + urlToFileRegex.ReplaceAllString(u, "-")
 }
 
 var Errors = make(map[string]int64, 0)
 
-func request(url string) (*goquery.Document, error) {
+func request(u string) (*goquery.Document, error) {
 	c := make(chan Response)
-	RequestQueue <- NewRequest{Url: url, C: c}
+	RequestQueue <- NewRequest{Url: u, C: c}
 	r := <-c
 
 	if r.Err != nil {
-		if Errors[url] > 3 {
+		if Errors[u] > 3 {
 			return nil, r.Err
 		}
-		Errors[url] = Errors[url] + 1
-		log.Println("ERR", r.Err, ", counter:", Errors[url])
+		Errors[u] = Errors[u] + 1
+		log.Println("ERR", r.Err, ", counter:", Errors[u])
 		time.Sleep(2 * time.Second)
-		return request(url)
+		return request(u)
 	} else {
 		return r.Doc, r.Err
 	}
