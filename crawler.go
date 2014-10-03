@@ -143,7 +143,7 @@ var (
 func StartRequestService(n int) {
 	client := http.Client{}
 
-	for i := 0; i < WORKERS; i++ {
+	for i := 0; i < n; i++ {
 		go processRequestQueue(i, &client)
 	}
 }
