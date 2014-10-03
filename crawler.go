@@ -120,7 +120,10 @@ func getCities(doc *goquery.Document) {
 
 func getEntities(doc *goquery.Document) {
 	doc.Find("div[style='width:539; height:500; POSITION: absolute; TOP:198px; LEFT: 121px; overflow:auto'] table a").Each(func(_ int, s *goquery.Selection) {
-		log.Println(s.Text())
+		urlEntity, ok := s.Attr("href")
+		if ok {
+			request(urlEntity)
+		}
 	})
 }
 
