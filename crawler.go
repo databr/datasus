@@ -96,7 +96,7 @@ func Workers() {
 	}
 }
 
-func getStates(doc *goquery.Document) {
+func getStates(doc goquery.Document) {
 	doc.Find("div[style = 'width:300; height:209; POSITION: absolute; TOP: 185px; LEFT: 400px; overflow:auto'] table tr").Each(func(_ int, s *goquery.Selection) {
 		data := s.Find("td")
 		name := strings.TrimSpace(data.Eq(0).Text())
@@ -105,7 +105,7 @@ func getStates(doc *goquery.Document) {
 	})
 }
 
-func getCities(doc *goquery.Document) {
+func getCities(doc goquery.Document) {
 	doc.Find("div[style = 'width:450; height:300; POSITION: absolute; TOP: 201px; LEFT: 180px; overflow:auto'] table tr").Each(func(_ int, s *goquery.Selection) {
 
 		go func(data *goquery.Selection) {
@@ -118,7 +118,7 @@ func getCities(doc *goquery.Document) {
 	})
 }
 
-func getEntities(doc *goquery.Document) {
+func getEntities(doc goquery.Document) {
 	doc.Find("div[style='width:539; height:500; POSITION: absolute; TOP:198px; LEFT: 121px; overflow:auto'] table a").Each(func(_ int, s *goquery.Selection) {
 		urlEntity, ok := s.Attr("href")
 		if ok {
@@ -135,7 +135,7 @@ type NewRequest struct {
 }
 
 type Response struct {
-	Doc *goquery.Document
+	Doc goquery.Document
 	Err error
 }
 
@@ -147,18 +147,19 @@ func StartRequestService(n int) {
 	client := http.Client{}
 
 	for i := 0; i < n; i++ {
-		go processRequestQueue(i, &client)
+		go processRequestQueue(i, client)
 	}
 }
 
-func processRequestQueue(i int, client *http.Client) {
+func processRequestQueue(i int, client http.Client) {
 	workerID := strconv.Itoa(i)
 
 	log.Println("#"+workerID, "REQUEST WORKER STARTED")
 	for {
 		var (
-			doc *goquery.Document
-			err error
+			doc  goquery.Document
+			doc_ *goquery.Document
+			err  error
 		)
 		r := <-RequestQueue
 		log.Println("#"+workerID, "GET", r.Url)
@@ -170,7 +171,8 @@ func processRequestQueue(i int, client *http.Client) {
 			file, err := os.Open(filename)
 			if err == nil {
 				log.Println("#"+workerID, "FROM CACHE", r.Url)
-				doc, err = goquery.NewDocumentFromReader(file)
+				doc_, err = goquery.NewDocumentFromReader(file)
+				doc = *doc_
 			}
 		} else {
 			doc, err = makeRequest(r.Url, client)
@@ -186,10 +188,11 @@ func processRequestQueue(i int, client *http.Client) {
 	}
 }
 
-func makeRequest(urlS string, client *http.Client) (doc *goquery.Document, err error) {
+func makeRequest(urlS string, client http.Client) (doc goquery.Document, err error) {
 	var (
-		req *http.Request
-		res *http.Response
+		req  *http.Request
+		res  *http.Response
+		doc_ *goquery.Document
 	)
 	urlP, err := url.Parse(urlS)
 	if err != nil {
@@ -210,7 +213,8 @@ func makeRequest(urlS string, client *http.Client) (doc *goquery.Document, err e
 		} else {
 			data, _ := ioutil.ReadAll(res.Body)
 			ioutil.WriteFile(urlToFilename(urlS), data, os.ModePerm)
-			doc, err = goquery.NewDocumentFromReader(res.Body)
+			doc_, err = goquery.NewDocumentFromReader(res.Body)
+			doc = *doc_
 			res.Body.Close()
 		}
 	}
@@ -226,14 +230,14 @@ func urlToFilename(u string) string {
 
 var Errors = make(map[string]int64, 0)
 
-func request(u string) (*goquery.Document, error) {
+func request(u string) (goquery.Document, error) {
 	c := make(chan Response)
 	RequestQueue <- NewRequest{Url: u, C: c}
 	r := <-c
 
 	if r.Err != nil {
 		if Errors[u] > 3 {
-			return nil, r.Err
+			return goquery.Document{}, r.Err
 		}
 		Errors[u] = Errors[u] + 1
 		log.Println("ERR", r.Err, ", counter:", Errors[u])
