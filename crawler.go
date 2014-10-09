@@ -122,7 +122,7 @@ func getEntities(doc *goquery.Document) {
 	doc.Find("div[style='width:539; height:500; POSITION: absolute; TOP:198px; LEFT: 121px; overflow:auto'] table a").Each(func(_ int, s *goquery.Selection) {
 		urlEntity, ok := s.Attr("href")
 		if ok {
-			request(urlEntity)
+			request(CNES_BASE_URL + urlEntity)
 		}
 	})
 }
