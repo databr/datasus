@@ -17,7 +17,7 @@ import (
 
 const (
 	CNES_BASE_URL = "http://cnes.datasus.gov.br/"
-	WORKERS       = 30
+	WORKERS       = 10
 )
 
 type NewState struct {
